@@ -896,7 +896,7 @@
                         joystickVec.normalize();
                         // Corrected joystick movement logic
                         velocity.z += joystickVec.y * moveSpeed * delta; // Forward/backward
-                        velocity.x -= joystickVec.x * moveSpeed * delta; // Left/right
+                        velocity.x += joystickVec.x * moveSpeed * delta; // Left/right
                     }
                 } else {
                     direction.z = Number(moveForward) - Number(moveBackward);
