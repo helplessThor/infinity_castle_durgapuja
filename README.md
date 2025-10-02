@@ -2,7 +2,7 @@
 
 An immersive 3D virtual Durga Puja pandal created with Three.js, inspired by the concept of a surreal and endless "Infinity Castle". Explore a procedurally generated world of floating structures, connecting stairways, and atmospheric lighting.
 
-**[Live Demo](https://helplessThor.github.io/infinity_castle_durgapuja/)** 
+**[Live Demo](https://helplessThor.github.io/infinity_castle_durgapuja/index.html)** 
 
 
 ## About The Project
