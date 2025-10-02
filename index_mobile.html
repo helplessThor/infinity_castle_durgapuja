@@ -187,11 +187,7 @@
             // --- Event Listeners ---
             window.addEventListener('resize', onWindowResize);
 
-            if (isMobile) {
-                document.addEventListener('touchstart', onTouchStart, { passive: false });
-                document.addEventListener('touchmove', onTouchMove, { passive: false });
-                document.addEventListener('touchend', onTouchEnd);
-            } else {
+            if (!isMobile) { // Only add key listeners for non-mobile
                 document.addEventListener('keydown', onKeyDown);
                 document.addEventListener('keyup', onKeyUp);
             }
@@ -727,17 +723,24 @@
                 instructionsText[0].innerHTML = 'Tap to enter the immersive experience';
                 instructionsText[1].innerHTML = 'Use the <strong class="text-orange-400">left joystick</strong> to move';
                 instructionsText[2].innerHTML = 'Drag on the <strong class="text-orange-400">right side</strong> to look';
-            }
 
-            instructions.addEventListener('click', () => {
-                if (isMobile) {
+                instructions.addEventListener('touchstart', () => {
                     isLocked = true;
                     instructions.style.display = 'none';
                     document.getElementById('joystick-container').style.display = 'block';
-                } else {
+
+                    // Add touch controls only after entering the experience
+                    document.addEventListener('touchstart', onTouchStart, { passive: false });
+                    document.addEventListener('touchmove', onTouchMove, { passive: false });
+                    document.addEventListener('touchend', onTouchEnd);
+                }, { once: true }); // Use { once: true } so this only fires once
+
+            } else {
+                 instructions.addEventListener('click', () => {
                     document.body.requestPointerLock();
-                }
-            });
+                });
+            }
+
 
             if (!isMobile) {
                 document.addEventListener('pointerlockchange', () => {
