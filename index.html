@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Durga Puja - Infinity Castle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 2rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            z-index: 10;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            display: none; /* Hidden by default */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instructions">
+        <h1 class="text-3xl font-bold mb-4 text-orange-300">Welcome to the Infinity Pandal</h1>
+        <p class="text-lg mb-2">Click to enter the immersive experience</p>
+        <p class="text-sm">Use <strong class="text-orange-400">WASD</strong> to move</p>
+        <p class="text-sm">Use the <strong class="text-orange-400">Mouse</strong> to look around</p>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- Basic Setup ---
+        let scene, camera, renderer;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        let prevTime = performance.now();
+        let isLocked = false;
+        
+        const instructions = document.getElementById('instructions');
+        const crosshair = document.getElementById('crosshair');
+        const structures = []; // To hold floating structures for stair connections
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            
+            // Load background texture
+            const loader = new THREE.TextureLoader();
+            loader.load('assets/background.avif', function(texture) {
+                // Create a canvas to apply dimming and vignette effect
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                const image = texture.image;
+
+                canvas.width = image.width;
+                canvas.height = image.height;
+
+                // Draw the original image
+                context.drawImage(image, 0, 0);
+
+                // Apply a slight dimming effect
+                context.fillStyle = 'rgba(0,0,0,0.2)';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Create a stronger vignette gradient
+                const gradient = context.createRadialGradient(
+                    canvas.width / 2, canvas.height / 2, canvas.height / 3, // Inner circle
+                    canvas.width / 2, canvas.height / 2, canvas.width / 1.5  // Outer circle
+                );
+                gradient.addColorStop(0, 'rgba(0,0,0,0)');
+                gradient.addColorStop(1, 'rgba(0,0,0,0.8)'); // More opaque edges
+
+                // Apply the gradient
+                context.fillStyle = gradient;
+                context.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Create a new texture from the canvas
+                const vignettedTexture = new THREE.CanvasTexture(canvas);
+                vignettedTexture.mapping = THREE.EquirectangularReflectionMapping;
+                vignettedTexture.colorSpace = THREE.SRGBColorSpace;
+                scene.background = vignettedTexture;
+            });
+
+            scene.fog = new THREE.Fog(0x331a00, 60, 180);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 10, 50);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // --- Lighting ---
+            const ambientLight = new THREE.AmbientLight(0xffd070, 0.6);
+            scene.add(ambientLight);
+
+            const hemiLight = new THREE.HemisphereLight(0xffd080, 0x201005, 0.5);
+            scene.add(hemiLight);
+
+            const mainLight = new THREE.DirectionalLight(0xff9933, 1.8);
+            mainLight.position.set(20, 50, 30);
+            mainLight.castShadow = true;
+            mainLight.shadow.mapSize.width = 2048;
+            mainLight.shadow.mapSize.height = 2048;
+            scene.add(mainLight);
+
+            // --- Create the Infinity Castle Pandal ---
+            createPandalStructure();
+            createIdolStage();
+            createEntranceDoors();
+            createFloor();
+            createConnectingStairs(); // New function call
+
+            // --- Controls ---
+            setupControls();
+
+            // --- Event Listeners ---
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+        }
+
+        // --- Helper function to create a texture for the window grids ---
+        function createGridTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const context = canvas.getContext('2d');
+            
+            context.fillStyle = '#f5e5c5'; // Warm paper color
+            context.fillRect(0, 0, 256, 256);
+            context.strokeStyle = '#4a2500'; // Dark wood color
+            context.lineWidth = 12;
+
+            for(let i = 0; i <= 256; i += 64) {
+                context.beginPath();
+                context.moveTo(i, 0);
+                context.lineTo(i, 256);
+                context.stroke();
+                context.beginPath();
+                context.moveTo(0, i);
+                context.lineTo(256, i);
+                context.stroke();
+            }
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            return texture;
+        }
+
+        // --- Materials ---
+        const woodMaterial = new THREE.MeshStandardMaterial({
+            color: 0x8B4513,
+            roughness: 0.8,
+            metalness: 0.1,
+        });
+        
+        const darkWoodMaterial = new THREE.MeshStandardMaterial({
+            color: 0x5C2E00,
+            roughness: 0.7,
+            metalness: 0.2,
+        });
+
+        const paperMaterial = new THREE.MeshStandardMaterial({
+            color: 0xfff5e1,
+            roughness: 0.9,
+            emissive: 0xcc8833, // Warmer emissive glow
+            side: THREE.DoubleSide,
+            map: createGridTexture() // Apply the new grid texture
+        });
+
+        const lanternMaterial = new THREE.MeshStandardMaterial({
+            color: 0xfff5e1,
+            emissive: 0xffaa33,
+            emissiveIntensity: 5
+        });
+
+        const lanternGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.5, 8);
+
+        function createPandalStructure() {
+            const pandalSize = 250;
+            const numStructures = 150;
+
+            for (let i = 0; i < numStructures; i++) {
+                const sizeX = Math.random() * 20 + 5;
+                const sizeY = Math.random() * 40 + 10;
+                const sizeZ = Math.random() * 20 + 5;
+                
+                const geometry = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
+                const material = Math.random() > 0.5 ? woodMaterial : darkWoodMaterial;
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                
+                const posX = (Math.random() - 0.5) * pandalSize;
+                const posY = (Math.random() * 0.8) * 80 + 10;
+                const posZ = (Math.random() - 0.5) * pandalSize;
+
+                // Keep the area in front of the stage clear of clutter
+                if (posZ < 10 && posZ > -80 && Math.abs(posX) < 70) {
+                    continue; // Skip creating structures in this zone
+                }
+
+                mesh.position.set(posX, posY, posZ);
+                mesh.rotation.y = Math.random() * Math.PI;
+
+                createShojiScreens(mesh, sizeX, sizeY, sizeZ);
+                addRoofLanterns(mesh, sizeX, sizeY, sizeZ); // Add lanterns to the roof
+                scene.add(mesh);
+                structures.push(mesh); // Add to array for stair generation
+            }
+        }
+        
+        function addRoofLanterns(parentMesh, sizeX, sizeY, sizeZ) {
+            const corners = [
+                new THREE.Vector3(sizeX / 2, sizeY / 2, sizeZ / 2),
+                new THREE.Vector3(-sizeX / 2, sizeY / 2, sizeZ / 2),
+                new THREE.Vector3(sizeX / 2, sizeY / 2, -sizeZ / 2),
+                new THREE.Vector3(-sizeX / 2, sizeY / 2, -sizeZ / 2)
+            ];
+
+            corners.forEach(corner => {
+                // Always place lanterns on corners
+                const lantern = new THREE.Mesh(lanternGeo, lanternMaterial);
+                lantern.position.copy(corner).y += 0.25; // Place on top surface
+                parentMesh.add(lantern);
+
+                // const light = new THREE.PointLight(0xffaa33, 5, 15, 1.5);
+                // light.position.copy(lantern.position);
+                // parentMesh.add(light);
+            });
+        }
+
+        function createShojiScreens(parentMesh, sizeX, sizeY, sizeZ) {
+            if (Math.random() > 0.4) {
+                const screenGeo = new THREE.PlaneGeometry(sizeX * 0.85, sizeY * 0.85);
+                const screen = new THREE.Mesh(screenGeo, paperMaterial);
+                screen.position.z = sizeZ / 2 + 0.01;
+                parentMesh.add(screen);
+            }
+            if (Math.random() > 0.4) {
+                const screenGeo = new THREE.PlaneGeometry(sizeZ * 0.85, sizeY * 0.85);
+                const screen = new THREE.Mesh(screenGeo, paperMaterial);
+                screen.rotation.y = Math.PI / 2;
+                screen.position.x = sizeX / 2 + 0.01;
+                parentMesh.add(screen);
+            }
+        }
+        
+        function createConnectingStairs() {
+            const stepGeo = new THREE.BoxGeometry(3, 0.4, 1.2);
+            const postGeo = new THREE.BoxGeometry(0.2, 2, 0.2);
+            const railGeo = new THREE.BoxGeometry(1, 0.2, 0.2); // Length will be scaled
+            // const lanternGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.5, 8);
+            const numConnections = 200; // Increased for more stairs
+
+            for (let i = 0; i < numConnections; i++) {
+                let s1 = structures[Math.floor(Math.random() * structures.length)];
+                let s2 = structures[Math.floor(Math.random() * structures.length)];
+                if (s1 === s2) continue;
+
+                const pos1 = s1.position.clone();
+                const pos2 = s2.position.clone();
+
+                const distance = pos1.distanceTo(pos2);
+                if (distance < 40 || distance > 90) continue;
+
+                const stairGroup = new THREE.Group();
+                const direction = new THREE.Vector3().subVectors(pos2, pos1);
+                const stepCount = Math.floor(distance / 1.5);
+                
+                const sideVector = new THREE.Vector3().crossVectors(direction.clone().normalize(), new THREE.Vector3(0, 1, 0)).normalize();
+                const railOffset = 1.8; // How far the rails are from the center of the steps
+
+                // Create steps
+                for(let j = 0; j < stepCount; j++) {
+                    const step = new THREE.Mesh(stepGeo, darkWoodMaterial);
+                    step.castShadow = true;
+                    const intermediatePos = new THREE.Vector3().lerpVectors(pos1, pos2, j / stepCount);
+                    step.position.copy(intermediatePos);
+                    step.lookAt(pos2);
+                    stairGroup.add(step);
+                }
+
+                // Create balustrades and lanterns
+                const postInterval = 5; // Place a post every 5 steps
+                for (let j = 0; j < stepCount; j += postInterval) {
+                    const intermediatePos = new THREE.Vector3().lerpVectors(pos1, pos2, j / stepCount);
+                    
+                    [-1, 1].forEach(side => {
+                        const post = new THREE.Mesh(postGeo, woodMaterial);
+                        post.castShadow = true;
+                        const postPos = intermediatePos.clone().add(sideVector.clone().multiplyScalar(railOffset * side));
+                        post.position.copy(postPos);
+                        post.position.y += 0.8; // Raise post to sit on stairs
+                        stairGroup.add(post);
+
+                        // Add a lantern on top of the post
+                        const lantern = new THREE.Mesh(lanternGeo, lanternMaterial);
+                        lantern.position.copy(post.position).y += 1.2; // Place on top of post
+                        stairGroup.add(lantern);
+
+                        // const light = new THREE.PointLight(0xffaa33, 5, 10, 1.5);
+                        // light.position.copy(lantern.position);
+                        // stairGroup.add(light);
+                    });
+                }
+
+                // Create handrails
+                [-1, 1].forEach(side => {
+                    const rail = new THREE.Mesh(railGeo, woodMaterial);
+                    rail.scale.x = distance; // Scale rail to the length of the staircase
+                    rail.castShadow = true;
+                    const railPos = new THREE.Vector3().lerpVectors(pos1, pos2, 0.5); // Center of the staircase
+                    railPos.add(sideVector.clone().multiplyScalar(railOffset * side));
+                    rail.position.copy(railPos);
+                    rail.position.y += 1.8; // Handrail height
+                    rail.lookAt(pos2.clone().add(sideVector.clone().multiplyScalar(railOffset * side)));
+                    stairGroup.add(rail);
+                });
+
+                scene.add(stairGroup);
+            }
+        }
+
+        let entranceDoors = [];
+        function createEntranceDoors() {
+            const doorWidth = 20;
+            const doorHeight = 40;
+            const doorDepth = 2;
+            const doorGeometry = new THREE.BoxGeometry(doorWidth, doorHeight, doorDepth);
+
+            const leftDoor = new THREE.Mesh(doorGeometry, darkWoodMaterial);
+            leftDoor.position.set(-doorWidth / 2 - 2, doorHeight / 2, 60);
+            leftDoor.castShadow = true;
+            entranceDoors.push({mesh: leftDoor, direction: 1});
+            scene.add(leftDoor);
+
+            const rightDoor = new THREE.Mesh(doorGeometry, darkWoodMaterial);
+            rightDoor.position.set(doorWidth / 2 + 2, doorHeight / 2, 60);
+            rightDoor.castShadow = true;
+            entranceDoors.push({mesh: rightDoor, direction: -1});
+            scene.add(rightDoor);
+        }
+
+        function createIdolStage() {
+            const stageGroup = new THREE.Group();
+            
+            // Main platform for Durga Maa
+            const mainStageGeo = new THREE.BoxGeometry(25, 3, 20);
+            const mainStage = new THREE.Mesh(mainStageGeo, woodMaterial);
+            mainStage.position.set(0, 1.5, 0);
+            mainStage.receiveShadow = true;
+            stageGroup.add(mainStage);
+
+            // --- Create Balustrade and Stairs for the Main Stage ---
+            const balustradeGroup = new THREE.Group();
+            const postGeo = new THREE.BoxGeometry(0.3, 2.5, 0.3);
+            const railGeo = new THREE.BoxGeometry(1, 0.2, 0.2); // Length is scaled
+            const stageHeight = mainStageGeo.parameters.height;
+            const stageWidth = mainStageGeo.parameters.width;
+            const stageDepth = mainStageGeo.parameters.depth;
+            const postY = stageHeight + (postGeo.parameters.height / 2) - 0.2;
+            const railY = postY + (postGeo.parameters.height / 2) - (railGeo.parameters.height / 2);
+            const postInterval = 4;
+            const stairGap = 5;
+
+            // Function to create a rail section with posts
+            function createRailSection(start, end, isXAxis) {
+                const length = start.distanceTo(end);
+                const center = new THREE.Vector3().lerpVectors(start, end, 0.5);
+                
+                // Rail
+                const rail = new THREE.Mesh(railGeo, darkWoodMaterial);
+                rail.position.copy(center);
+                rail.position.y = railY;
+                rail.scale.x = length;
+                if (!isXAxis) rail.rotation.y = Math.PI / 2;
+                balustradeGroup.add(rail);
+
+                // Posts
+                const numPosts = Math.floor(length / postInterval) + 1;
+                for (let i = 0; i <= numPosts; i++) {
+                    const postPos = new THREE.Vector3().lerpVectors(start, end, i / numPosts);
+                    const post = new THREE.Mesh(postGeo, darkWoodMaterial);
+                    post.position.copy(postPos);
+                    post.position.y = postY;
+                    balustradeGroup.add(post);
+
+                    // Add a lantern on top of each post
+                    const lantern = new THREE.Mesh(lanternGeo, lanternMaterial);
+                    lantern.position.copy(post.position);
+                    lantern.position.y += (postGeo.parameters.height / 2) + (lanternGeo.parameters.height / 2);
+                    balustradeGroup.add(lantern);
+                }
+            }
+
+           
+
+            // --- Create Stairs ---
+            const stairGroup = new THREE.Group();
+            const stepCount = 3;
+            const stepHeight = stageHeight / stepCount;
+            const stepDepth = 1.5;
+            const stepGeo = new THREE.BoxGeometry(stairGap - 0.5, stepHeight, stepDepth);
+
+            for (let i = 0; i < stepCount; i++) {
+                const step = new THREE.Mesh(stepGeo, woodMaterial);
+                step.position.set(
+                    0,
+                    (stepHeight / 2) + (i * stepHeight),
+                    (stageDepth / 2) + (stepDepth / 2) + (i * stepDepth)
+                );
+                step.receiveShadow = true;
+                stairGroup.add(step);
+            }
+            stageGroup.add(stairGroup);
+
+
+            // Side platforms
+            const sideStageGeo = new THREE.BoxGeometry(20, 2, 18);
+            
+            const leftStage1 = new THREE.Mesh(sideStageGeo, woodMaterial);
+            leftStage1.position.set(-22, 1, 1);
+            leftStage1.receiveShadow = true;
+            stageGroup.add(leftStage1);
+            
+            const rightStage1 = new THREE.Mesh(sideStageGeo, woodMaterial);
+            rightStage1.position.set(22, 1, 1);
+            rightStage1.receiveShadow = true;
+            stageGroup.add(rightStage1);
+            
+            const leftStage2 = new THREE.Mesh(sideStageGeo, woodMaterial);
+            leftStage2.position.set(-42, 1, 2);
+            leftStage2.receiveShadow = true;
+            stageGroup.add(leftStage2);
+
+            const rightStage2 = new THREE.Mesh(sideStageGeo, woodMaterial);
+            rightStage2.position.set(42, 1, 2);
+            rightStage2.receiveShadow = true;
+            stageGroup.add(rightStage2);
+
+              // --- Define Stage Boundaries ---
+            const mainStageHalfW = stageWidth / 2; // 12.5
+            const mainStageHalfD = stageDepth / 2; // 10
+
+            const sideStage1HalfW = sideStageGeo.parameters.width / 2; // 10
+            const sideStage1HalfD = sideStageGeo.parameters.depth / 2; // 9
+            const sideStage1X = leftStage1.position.x; // -22
+            const sideStage1Z = leftStage1.position.z; // 1
+
+            const sideStage2HalfW = sideStageGeo.parameters.width / 2; // 10
+            const sideStage2HalfD = sideStageGeo.parameters.depth / 2; // 9
+            const sideStage2X = leftStage2.position.x; // -42
+            const sideStage2Z = leftStage2.position.z; // 2
+
+            const totalWidth = 52; // From leftStage2 edge to rightStage2 edge
+
+            // Back Rail (across all stages)
+            createRailSection(new THREE.Vector3(-totalWidth, 0, -sideStage2HalfD + sideStage2Z), new THREE.Vector3(totalWidth, 0, -sideStage2HalfD + sideStage2Z), true);
+            
+            // Left Side Rails
+            createRailSection(new THREE.Vector3(-totalWidth, 0, -sideStage2HalfD + sideStage2Z), new THREE.Vector3(-totalWidth, 0, sideStage2HalfD + sideStage2Z), false);
+            
+            // Right Side Rails
+            createRailSection(new THREE.Vector3(totalWidth, 0, -sideStage2HalfD + sideStage2Z), new THREE.Vector3(totalWidth, 0, sideStage2HalfD + sideStage2Z), false);
+
+            // Front Rails (with gap)
+            // Left side
+            createRailSection(new THREE.Vector3(-totalWidth, 0, sideStage2HalfD + sideStage2Z), new THREE.Vector3(-mainStageHalfW, 0, sideStage1HalfD + sideStage1Z), true);
+            createRailSection(new THREE.Vector3(-mainStageHalfW, 0, sideStage1HalfD + sideStage1Z), new THREE.Vector3(-mainStageHalfW, 0, mainStageHalfD), false);
+            createRailSection(new THREE.Vector3(-mainStageHalfW, 0, mainStageHalfD), new THREE.Vector3(-stairGap / 2, 0, mainStageHalfD), true);
+            
+            // Right side
+            createRailSection(new THREE.Vector3(stairGap / 2, 0, mainStageHalfD), new THREE.Vector3(mainStageHalfW, 0, mainStageHalfD), true);
+            createRailSection(new THREE.Vector3(mainStageHalfW, 0, mainStageHalfD), new THREE.Vector3(mainStageHalfW, 0, sideStage1HalfD + sideStage1Z), false);
+            createRailSection(new THREE.Vector3(mainStageHalfW, 0, sideStage1HalfD + sideStage1Z), new THREE.Vector3(totalWidth, 0, sideStage2HalfD + sideStage2Z), true);
+
+
+            stageGroup.add(balustradeGroup);
+
+            // Backdrop (replace plain wood with an image)
+            const backdropGeo = new THREE.BoxGeometry(90, 40, 2);
+            const backdropMaterial = darkWoodMaterial.clone();
+            backdropMaterial.side = THREE.DoubleSide; // ensure faces are visible
+            const backdrop = new THREE.Mesh(backdropGeo, backdropMaterial);
+            backdrop.position.set(0, 20, -12);
+            backdrop.receiveShadow = true;
+            backdrop.castShadow = false;
+            stageGroup.add(backdrop);
+
+            // Add lanterns to the backdrop corners
+            const backdropTopY = backdrop.position.y + backdropGeo.parameters.height / 2;
+            const backdropEdgeX = backdropGeo.parameters.width / 2;
+            const backdropFrontZ = backdrop.position.z - backdropGeo.parameters.depth / 2;
+            const backdropBackZ = backdrop.position.z + backdropGeo.parameters.depth / 2;
+
+            const frontLeftLantern = new THREE.Mesh(lanternGeo, lanternMaterial);
+            frontLeftLantern.position.set(-backdropEdgeX, backdropTopY + 0.25, backdropFrontZ);
+            stageGroup.add(frontLeftLantern);
+
+            const frontRightLantern = new THREE.Mesh(lanternGeo, lanternMaterial);
+            frontRightLantern.position.set(backdropEdgeX, backdropTopY + 0.25, backdropFrontZ);
+            stageGroup.add(frontRightLantern);
+
+            const backLeftLantern = new THREE.Mesh(lanternGeo, lanternMaterial);
+            backLeftLantern.position.set(-backdropEdgeX, backdropTopY + 0.25, backdropBackZ);
+            stageGroup.add(backLeftLantern);
+
+            const backRightLantern = new THREE.Mesh(lanternGeo, lanternMaterial);
+            backRightLantern.position.set(backdropEdgeX, backdropTopY + 0.25, backdropBackZ);
+            stageGroup.add(backRightLantern);
+            
+            // ensure the whole stage is placed and visible
+            stageGroup.position.set(0, 0, -60);
+            scene.add(stageGroup);
+
+            // Load idol image texture (put your image at ./assets/idol.jpg)
+            const loader = new THREE.TextureLoader();
+            loader.load(
+                'assets/idol.png',
+                function (texture) {
+                    // correct color space for display
+                    if ('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace;
+                    else texture.encoding = THREE.sRGBEncoding;
+                    texture.flipY = true;
+                    // improve sharpness
+                    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+                    // Apply to backdrop material
+                    backdropMaterial.map = texture;
+                    // make it glow a bit so it's vibrant under stage lighting
+                    backdropMaterial.emissiveMap = texture;
+                    backdropMaterial.emissive = new THREE.Color(0xffffff);
+                    backdropMaterial.emissiveIntensity = 0.9;
+                    backdropMaterial.needsUpdate = true;
+
+                    // Add a front-facing plane that uses MeshBasicMaterial so image stays bright and vibrant
+                    const planeGeo = new THREE.PlaneGeometry(86, 36);
+                    const planeMat = new THREE.MeshBasicMaterial({
+                        map: texture,
+                        toneMapped: false // keep it vivid, not reduced by tone mapping
+                    });
+                    const imgPlane = new THREE.Mesh(planeGeo, planeMat);
+                    imgPlane.position.set(0, 20, -11); // slightly in front of the backdrop box
+                    stageGroup.add(imgPlane);
+                },
+                undefined,
+                function (err) {
+                    console.warn('Idol image failed to load:', err);
+                }
+            );
+
+            // Stage lighting
+            const stageLight = new THREE.SpotLight(0xffc078, 800, 150, Math.PI / 4, 0.3, 1);
+            stageLight.position.set(0, 40, -20);
+            stageLight.target = mainStage;
+            stageLight.target.position.set(0,0,-60)
+            stageLight.castShadow = true;
+            scene.add(stageLight);
+            scene.add(stageLight.target);
+        }
+
+        function createTatamiTexture() {
+            const canvas = document.createElement('canvas');
+            const size = 512;
+            canvas.width = size;
+            canvas.height = size;
+            const context = canvas.getContext('2d');
+
+            const matColor = '#d8c37a'; // Yellowish straw color
+            const borderColor = '#3a2d1e'; // Dark border color
+
+            // Function to draw a single tatami mat with a woven texture
+            function drawMat(x, y, width, height, vertical) {
+                context.save();
+                context.beginPath();
+                context.rect(x, y, width, height);
+                context.clip();
+
+                // Base color
+                context.fillStyle = matColor;
+                context.fillRect(x, y, width, height);
+
+                // Woven texture lines
+                context.strokeStyle = 'rgba(0,0,0,0.07)';
+                context.lineWidth = 1.5;
+                const step = 4;
+                if (vertical) {
+                    for (let i = x; i < x + width; i += step) {
+                        context.beginPath();
+                        context.moveTo(i, y);
+                        context.lineTo(i, y + height);
+                        context.stroke();
+                    }
+                } else {
+                    for (let i = y; i < y + height; i += step) {
+                        context.beginPath();
+                        context.moveTo(x, i);
+                        context.lineTo(x + width, i);
+                        context.stroke();
+                    }
+                }
+                context.restore();
+
+                // Border
+                context.strokeStyle = borderColor;
+                context.lineWidth = 8;
+                context.strokeRect(x, y, width, height);
+            }
+
+            const matW = size / 2;
+            const matH = size / 4;
+
+            // Create an auspicious tatami layout (shuugi-jiki)
+            drawMat(matH, 0, matW, matH, false);
+            drawMat(matH, matH * 3, matW, matH, false);
+
+            drawMat(0, 0, matH, matW, true);
+            drawMat(matH + matW, 0, matH, matW, true);
+
+            drawMat(matH, matH, matH, matW, true);
+            drawMat(matW, matH, matH, matW, true);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(12, 12); // Repeat the pattern across the floor
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            texture.colorSpace = THREE.SRGBColorSpace;
+            return texture;
+        }
+
+        function createFloor() {
+            const floorGeometry = new THREE.PlaneGeometry(300, 300);
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                map: createTatamiTexture(),
+                roughness: 0.8,
+                metalness: 0.1
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+        }
+
+        // --- Controls and Interaction ---
+        function setupControls() {
+            instructions.addEventListener('click', () => {
+                document.body.requestPointerLock();
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                if (document.pointerLockElement === document.body) {
+                    isLocked = true;
+                    instructions.style.display = 'none';
+                    crosshair.style.display = 'block';
+                    document.addEventListener('mousemove', onMouseMove);
+                } else {
+                    isLocked = false;
+                    instructions.style.display = 'block';
+                    crosshair.style.display = 'none';
+                    document.removeEventListener('mousemove', onMouseMove);
+                    moveForward = moveBackward = moveLeft = moveRight = false;
+                }
+            });
+        }
+        
+        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        const PI_2 = Math.PI / 2;
+
+        function onMouseMove(event) {
+            if (!isLocked) return;
+            const movementX = event.movementX || 0;
+            const movementY = event.movementY || 0;
+
+            euler.setFromQuaternion(camera.quaternion);
+            euler.y -= movementX * 0.002;
+            euler.x -= movementY * 0.002;
+            euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+            camera.quaternion.setFromEuler(euler);
+        }
+        
+        function onKeyDown(event) {
+            switch (event.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyD': moveRight = true; break;
+            }
+        }
+
+        function onKeyUp(event) {
+            switch (event.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyD': moveRight = false; break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            entranceDoors.forEach(door => {
+                door.mesh.position.z += Math.sin(time * 0.0005) * 0.01 * door.direction;
+            });
+
+            if (isLocked) {
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * 120.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 120.0 * delta;
+                
+                const cameraDirection = new THREE.Vector3();
+                camera.getWorldDirection(cameraDirection);
+                const forward = new THREE.Vector3(cameraDirection.x, 0, cameraDirection.z).normalize();
+                const right = new THREE.Vector3().crossVectors(camera.up, forward).normalize();
+                
+                camera.position.addScaledVector(forward, -velocity.z * delta);
+                camera.position.addScaledVector(right, -velocity.x * delta);
+
+                if (camera.position.y < 5) camera.position.y = 5;
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
+
