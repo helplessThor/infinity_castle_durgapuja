@@ -40,6 +40,29 @@
             transform: translate(-50%, -50%);
             display: none; /* Hidden by default */
         }
+        #joystick-container {
+            position: absolute;
+            bottom: 5vh;
+            left: 5vw;
+            z-index: 20;
+        }
+        #joystick-move {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+        }
+        #joystick-move-thumb {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            top: 30px;
+            left: 30px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+        }
     </style>
 </head>
 <body>
@@ -52,6 +75,12 @@
     </div>
 
     <div id="crosshair"></div>
+
+    <div id="joystick-container" style="display: none;">
+        <div id="joystick-move">
+            <div id="joystick-move-thumb"></div>
+        </div>
+    </div>
 
     <script type="importmap">
         {
@@ -71,6 +100,7 @@
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
         let isLocked = false;
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         
         const instructions = document.getElementById('instructions');
         const crosshair = document.getElementById('crosshair');
@@ -156,8 +186,11 @@
 
             // --- Event Listeners ---
             window.addEventListener('resize', onWindowResize);
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
+
+            if (!isMobile) { // Only add key listeners for non-mobile
+                document.addEventListener('keydown', onKeyDown);
+                document.addEventListener('keyup', onKeyUp);
+            }
         }
 
         // --- Helper function to create a texture for the window grids ---
@@ -438,17 +471,17 @@
 
             // --- Create Stairs ---
             const stairGroup = new THREE.Group();
-            const stepCount = 3;
+            const stepCount = 1;
             const stepHeight = stageHeight / stepCount;
             const stepDepth = 1.5;
             const stepGeo = new THREE.BoxGeometry(stairGap - 0.5, stepHeight, stepDepth);
 
             for (let i = 0; i < stepCount; i++) {
-                const step = new THREE.Mesh(stepGeo, woodMaterial);
+                const step = new THREE.Mesh(stepGeo, darkWoodMaterial);
                 step.position.set(
                     0,
                     (stepHeight / 2) + (i * stepHeight),
-                    (stageDepth / 2) + (stepDepth / 2) + (i * stepDepth)
+                    (stageDepth / 2) + stepDepth - (stepDepth / 2) - (i * stepDepth)
                 );
                 step.receiveShadow = true;
                 stairGroup.add(step);
@@ -685,24 +718,46 @@
 
         // --- Controls and Interaction ---
         function setupControls() {
-            instructions.addEventListener('click', () => {
-                document.body.requestPointerLock();
-            });
+            if (isMobile) {
+                const instructionsText = instructions.querySelectorAll('p');
+                instructionsText[0].innerHTML = 'Tap to enter the immersive experience';
+                instructionsText[1].innerHTML = 'Use the <strong class="text-orange-400">left joystick</strong> to move';
+                instructionsText[2].innerHTML = 'Drag on the <strong class="text-orange-400">right side</strong> to look';
 
-            document.addEventListener('pointerlockchange', () => {
-                if (document.pointerLockElement === document.body) {
+                instructions.addEventListener('touchstart', () => {
                     isLocked = true;
                     instructions.style.display = 'none';
-                    crosshair.style.display = 'block';
-                    document.addEventListener('mousemove', onMouseMove);
-                } else {
-                    isLocked = false;
-                    instructions.style.display = 'block';
-                    crosshair.style.display = 'none';
-                    document.removeEventListener('mousemove', onMouseMove);
-                    moveForward = moveBackward = moveLeft = moveRight = false;
-                }
-            });
+                    document.getElementById('joystick-container').style.display = 'block';
+
+                    // Add touch controls only after entering the experience
+                    document.addEventListener('touchstart', onTouchStart, { passive: false });
+                    document.addEventListener('touchmove', onTouchMove, { passive: false });
+                    document.addEventListener('touchend', onTouchEnd);
+                }, { once: true }); // Use { once: true } so this only fires once
+
+            } else {
+                 instructions.addEventListener('click', () => {
+                    document.body.requestPointerLock();
+                });
+            }
+
+
+            if (!isMobile) {
+                document.addEventListener('pointerlockchange', () => {
+                    if (document.pointerLockElement === document.body) {
+                        isLocked = true;
+                        instructions.style.display = 'none';
+                        crosshair.style.display = 'block';
+                        document.addEventListener('mousemove', onMouseMove);
+                    } else {
+                        isLocked = false;
+                        instructions.style.display = 'block';
+                        crosshair.style.display = 'none';
+                        document.removeEventListener('mousemove', onMouseMove);
+                        moveForward = moveBackward = moveLeft = moveRight = false;
+                    }
+                });
+            }
         }
         
         const euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -720,6 +775,83 @@
             camera.quaternion.setFromEuler(euler);
         }
         
+        // --- Touch Controls for Mobile ---
+        const touchState = {
+            move: { id: -1, x: 0, y: 0, dx: 0, dy: 0 },
+            look: { id: -1, x: 0, y: 0, dx: 0, dy: 0 }
+        };
+        const joystickThumb = document.getElementById('joystick-move-thumb');
+        const joystickRadius = 60; // Half of the joystick-move width
+
+        function onTouchStart(event) {
+            event.preventDefault();
+            const touches = event.changedTouches;
+            for (let i = 0; i < touches.length; i++) {
+                const touch = touches[i];
+                // Left side of screen for movement
+                if (touch.clientX < window.innerWidth / 2 && touchState.move.id === -1) {
+                    touchState.move.id = touch.identifier;
+                    touchState.move.x = touch.clientX;
+                    touchState.move.y = touch.clientY;
+                } 
+                // Right side for looking
+                else if (touch.clientX >= window.innerWidth / 2 && touchState.look.id === -1) {
+                    touchState.look.id = touch.identifier;
+                    touchState.look.x = touch.clientX;
+                    touchState.look.y = touch.clientY;
+                }
+            }
+        }
+
+        function onTouchMove(event) {
+            event.preventDefault();
+            const touches = event.changedTouches;
+            for (let i = 0; i < touches.length; i++) {
+                const touch = touches[i];
+                // Movement joystick
+                if (touch.identifier === touchState.move.id) {
+                    touchState.move.dx = touch.clientX - touchState.move.x;
+                    touchState.move.dy = touch.clientY - touchState.move.y;
+                    
+                    const angle = Math.atan2(touchState.move.dy, touchState.move.dx);
+                    const distance = Math.min(Math.sqrt(touchState.move.dx**2 + touchState.move.dy**2), joystickRadius);
+                    
+                    joystickThumb.style.transform = `translate(${distance * Math.cos(angle)}px, ${distance * Math.sin(angle)}px)`;
+
+                } 
+                // Look controls
+                else if (touch.identifier === touchState.look.id) {
+                    const movementX = touch.clientX - touchState.look.x;
+                    const movementY = touch.clientY - touchState.look.y;
+                    
+                    euler.setFromQuaternion(camera.quaternion);
+                    euler.y -= movementX * 0.004; // Sensitivity adjustment for touch
+                    euler.x -= movementY * 0.004;
+                    euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+                    camera.quaternion.setFromEuler(euler);
+
+                    touchState.look.x = touch.clientX;
+                    touchState.look.y = touch.clientY;
+                }
+            }
+        }
+
+        function onTouchEnd(event) {
+            const touches = event.changedTouches;
+            for (let i = 0; i < touches.length; i++) {
+                const touch = touches[i];
+                if (touch.identifier === touchState.move.id) {
+                    touchState.move.id = -1;
+                    touchState.move.dx = 0;
+                    touchState.move.dy = 0;
+                    joystickThumb.style.transform = `translate(0px, 0px)`;
+                } else if (touch.identifier === touchState.look.id) {
+                    touchState.look.id = -1;
+                }
+            }
+        }
+
+
         function onKeyDown(event) {
             switch (event.code) {
                 case 'KeyW': moveForward = true; break;
@@ -756,12 +888,24 @@
             if (isLocked) {
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                direction.z = Number(moveForward) - Number(moveBackward);
-                direction.x = Number(moveRight) - Number(moveLeft);
-                direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * 120.0 * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * 120.0 * delta;
+                if (isMobile) {
+                    const moveSpeed = 120.0;
+                    const joystickVec = new THREE.Vector2(touchState.move.dx, touchState.move.dy);
+                    if (joystickVec.length() > 10) { // Deadzone
+                        joystickVec.normalize();
+                        // Corrected joystick movement logic
+                        velocity.z -= joystickVec.y * moveSpeed * delta; // Forward/backward
+                        velocity.x += joystickVec.x * moveSpeed * delta; // Left/right
+                    }
+                } else {
+                    direction.z = Number(moveForward) - Number(moveBackward);
+                    direction.x = Number(moveRight) - Number(moveLeft);
+                    direction.normalize();
+
+                    if (moveForward || moveBackward) velocity.z -= direction.z * 120.0 * delta;
+                    if (moveLeft || moveRight) velocity.x -= direction.x * 120.0 * delta;
+                }
                 
                 const cameraDirection = new THREE.Vector3();
                 camera.getWorldDirection(cameraDirection);
