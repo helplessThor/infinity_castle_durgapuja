@@ -419,7 +419,7 @@
             const stageGroup = new THREE.Group();
             
             // Main platform for Durga Maa
-            const mainStageGeo = new THREE.BoxGeometry(25, 3, 20);
+            const mainStageGeo = new THREE.BoxGeometry(25, 4, 20);
             const mainStage = new THREE.Mesh(mainStageGeo, woodMaterial);
             mainStage.position.set(0, 1.5, 0);
             mainStage.receiveShadow = true;
@@ -471,17 +471,17 @@
 
             // --- Create Stairs ---
             const stairGroup = new THREE.Group();
-            const stepCount = 3;
-            const stepHeight = stageHeight / stepCount;
+            const stepCount = 1;
+            const stepHeight = stageHeight / 2;
             const stepDepth = 1.5;
             const stepGeo = new THREE.BoxGeometry(stairGap - 0.5, stepHeight, stepDepth);
 
             for (let i = 0; i < stepCount; i++) {
-                const step = new THREE.Mesh(stepGeo, woodMaterial);
+                const step = new THREE.Mesh(stepGeo, darkWoodMaterial);
                 step.position.set(
                     0,
                     (stepHeight / 2) + (i * stepHeight),
-                    (stageDepth / 2) + (stepDepth / 2) + (i * stepDepth)
+                    (stageDepth / 2) + stepDepth - (stepDepth / 2) - (i * stepDepth)
                 );
                 step.receiveShadow = true;
                 stairGroup.add(step);
@@ -895,8 +895,8 @@
                     if (joystickVec.length() > 10) { // Deadzone
                         joystickVec.normalize();
                         // Corrected joystick movement logic
-                        velocity.z -= joystickVec.y * moveSpeed * delta; // Forward/backward
-                        velocity.x += joystickVec.x * moveSpeed * delta; // Left/right
+                        velocity.z += joystickVec.y * moveSpeed * delta; // Forward/backward
+                        velocity.x -= joystickVec.x * moveSpeed * delta; // Left/right
                     }
                 } else {
                     direction.z = Number(moveForward) - Number(moveBackward);
