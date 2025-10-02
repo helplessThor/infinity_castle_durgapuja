@@ -895,7 +895,7 @@
                     if (joystickVec.length() > 10) { // Deadzone
                         joystickVec.normalize();
                         // Corrected joystick movement logic
-                        velocity.z -= joystickVec.y * moveSpeed * delta; // Forward/backward
+                        velocity.z += joystickVec.y * moveSpeed * delta; // Forward/backward
                         velocity.x += joystickVec.x * moveSpeed * delta; // Left/right
                     }
                 } else {
@@ -927,4 +927,5 @@
     </script>
 </body>
 </html>
+
 
