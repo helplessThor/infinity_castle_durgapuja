@@ -891,8 +891,9 @@
                     const joystickVec = new THREE.Vector2(touchState.move.dx, touchState.move.dy);
                     if (joystickVec.length() > 10) { // Deadzone
                         joystickVec.normalize();
-                        velocity.z += joystickVec.y * moveSpeed * delta;
-                        velocity.x -= joystickVec.x * moveSpeed * delta;
+                        // Corrected joystick movement logic
+                        velocity.z -= joystickVec.y * moveSpeed * delta; // Forward/backward
+                        velocity.x += joystickVec.x * moveSpeed * delta; // Left/right
                     }
                 } else {
                     direction.z = Number(moveForward) - Number(moveBackward);
